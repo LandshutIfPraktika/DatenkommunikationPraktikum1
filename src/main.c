@@ -92,7 +92,7 @@ int sender_run(pid_t empfaenger) {
     }
 
 
-    sleep(4);
+    sleep(1);
 
     *buffer = *(message++);
     *(buffer + 1) = CHAR_ZERO;
@@ -123,7 +123,7 @@ int sender_run(pid_t empfaenger) {
         kill(empfaenger, SIGUSR2);
     }
     pause();
-    sleep(2);
+    sleep(1);
     return 0;
 }
 
