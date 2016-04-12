@@ -5,8 +5,10 @@
 #include <unistd.h>
 #include <signal.h>
 #include <string.h>
+#include <stdio.h>
 
-#define BUFFSIZE 3
+#define MSGLEN 3
+#define BUFSIZE 6
 #define CHAR_ZERO '0'
 #define CHAR_ONE '1'
 #define CHAR_TERMINATOR '\0'
@@ -31,6 +33,11 @@ void write_to_stdout(char *string);
 
 int pipe_one[2], pipe_two[2];
 
+union {
+    enum empfaenger_state empfaenger;
+    enum sender_state sender;
+} state;
+
 int main(void) {
     int exit_state;
     pid_t pid;
@@ -39,6 +46,7 @@ int main(void) {
 
 
     if ((pid = fork()) == -1) {
+        perror("fork failed");
         exit(1);
     }
 
@@ -62,25 +70,59 @@ int main(void) {
 }
 
 void sender_sighandler(int signum, siginfo_t *info, void *ptr) {
-    char buffer[BUFFSIZE];
+    const char *fail = "\tfail";
+    const char *ok = "\tok";
+    char buffer[MSGLEN + BUFSIZE];
     int incoming = pipe_two[0];
-    read(incoming, buffer, BUFFSIZE);
+    read(incoming, buffer, MSGLEN);
+    switch (state.sender) {
+        int ok = 0;
+        case S1:
+            ok = buffer[2] == '0';
+            break;
+        case S2:
+            ok = buffer[2] == '1';
+            break;
+    }
+    if (ok) {
+        strcat(buffer, ok);
+    } else {
+        strcat(buffer, fail);
+    }
     write_to_stdout(buffer);
 }
 
 void empfaenger_sighandler(int signum, siginfo_t *info, void *ptr) {
-    char buffer[BUFFSIZE];
+    const char *fail = "\tfail";
+    const char *ok = "\tok";
+    char buffer[MSGLEN + BUFSIZE];
     int incoming = pipe_one[0];
-    read(incoming, buffer, BUFFSIZE);
+    read(incoming, buffer, MSGLEN);
+    switch (state.empfaenger) {
+        int ok = 0;
+        case E1:
+            ok = buffer[2] == '1';
+            break;
+        case E2:
+            ok = buffer[2] == '2';
+            break;
+    }
+    if (ok) {
+        strcat(buffer, ok);
+    } else {
+        strcat(buffer, fail);
+    }
     write_to_stdout(buffer);
 }
 
 int sender_run(pid_t empfaenger) {
     const char *message = "TheQuickBrownFoxOle";
-    char buffer[BUFFSIZE];
+    char buffer[MSGLEN];
     int outgoing = pipe_one[1];
 
-    enum sender_state state = S0;
+
+    state.sender = S0;
+    //enum sender_state state = S0;
 
     struct sigaction act;
 
@@ -97,27 +139,27 @@ int sender_run(pid_t empfaenger) {
     *buffer = *(message++);
     *(buffer + 1) = CHAR_ZERO;
     *(buffer + 2) = CHAR_TERMINATOR;
-    write(outgoing, buffer, BUFFSIZE);
-    state = S1;
+    write(outgoing, buffer, MSGLEN);
+    state.sender = S1;
     kill(empfaenger, SIGUSR2);
 
     while (*message) {
         pause();
-        switch (state) {
+        switch (state.sender) {
             case S1:
                 *buffer = *(message++);
                 *(buffer + 1) = CHAR_ONE;
                 *(buffer + 2) = CHAR_TERMINATOR;
-                write(outgoing, buffer, BUFFSIZE);
-                state = S2;
+                write(outgoing, buffer, MSGLEN);
+                state.sender = S2;
                 break;
 
             case S2:
                 *buffer = *(message++);
                 *(buffer + 1) = CHAR_ZERO;
                 *(buffer + 2) = CHAR_TERMINATOR;
-                write(outgoing, buffer, BUFFSIZE);
-                state = S1;
+                write(outgoing, buffer, MSGLEN);
+                state.sender = S1;
                 break;
         }
         kill(empfaenger, SIGUSR2);
@@ -129,11 +171,11 @@ int sender_run(pid_t empfaenger) {
 
 int empfaenger_run() {
     const char *message = "JumpsOverTheLazyDog";
-    char buffer[BUFFSIZE];
+    char buffer[MSGLEN];
     int outgoing = pipe_two[1];
 
     pid_t sender = getppid();
-    enum empfaenger_state state = E1;
+    state.empfaenger = E1;
 
     struct sigaction act;
 
@@ -146,21 +188,21 @@ int empfaenger_run() {
 
     while (*message) {
         pause();
-        switch (state) {
+        switch (state.empfaenger) {
             case E1:
                 *buffer = *(message++);
                 *(buffer + 1) = CHAR_ZERO;
                 *(buffer + 2) = CHAR_TERMINATOR;
-                write(outgoing, buffer, BUFFSIZE);
-                state = E2;
+                write(outgoing, buffer, MSGLEN);
+                state.empfaenger = E2;
                 break;
 
             case E2:
                 *buffer = *(message++);
                 *(buffer + 1) = CHAR_ONE;
                 *(buffer + 2) = CHAR_TERMINATOR;
-                write(outgoing, buffer, BUFFSIZE);
-                state = E1;
+                write(outgoing, buffer, MSGLEN);
+                state.empfaenger = E1;
                 break;
         }
         kill(sender, SIGUSR1);
